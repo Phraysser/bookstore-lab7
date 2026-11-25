@@ -1,0 +1,54 @@
+name: Lab 8 Docker
+
+on:
+  push:
+    branches: [lab8/docker]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-lab:
+    name: Docker exercises and reverse proxy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker version and hello-world
+        run: bash lab8/docker-lab.sh engine
+      - name: Nginx images and container lifecycle
+        run: bash lab8/docker-lab.sh images
+      - name: Published ports and docker exec
+        run: bash lab8/docker-lab.sh ports
+      - name: Bind mount and PostgreSQL persistence
+        run: bash lab8/docker-lab.sh volumes
+      - name: Bridge networks and DNS
+        run: bash lab8/docker-lab.sh networks
+      - name: Build bookstore and compare Docker contexts
+        run: bash lab8/docker-lab.sh build
+      - name: Bookstore HTTP and appnet DNS
+        run: bash lab8/docker-lab.sh bookstore
+      - name: Variant 9 Nginx reverse proxy
+        run: bash lab8/docker-lab.sh proxy
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Tag and push bookstore to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: bash lab8/docker-lab.sh publish
+      - name: Remove lab resources and compare Docker disk usage
+        run: bash lab8/docker-lab.sh cleanup
+
+  verify-pull:
+    name: Download and run image on a fresh runner
+    needs: docker-lab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull, run and verify the public image
+        run: bash lab8/docker-lab.sh pull
