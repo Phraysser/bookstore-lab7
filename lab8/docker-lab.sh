@@ -145,12 +145,12 @@ case "${1:?specify a lab stage}" in
         docker run -d --name db --network appnet -e POSTGRES_USER=lab -e POSTGRES_DB=lab \
             -e POSTGRES_HOST_AUTH_METHOD=trust "$pg"
         wait_pg db
-        docker run -d --name api --network appnet bookstore:v1
-        docker exec api nslookup db
+        docker run -d --name api --network appnet --dns-opt ndots:0 bookstore:v1
+        docker exec api nslookup -type=A db. 127.0.0.11
         docker network inspect --format '{{range .Containers}}{{.Name}} {{.IPv4Address}}{{println}}{{end}}' appnet
         ;;
     proxy)
-        docker run -d --name proxy --network appnet -p 127.0.0.1:8080:80 \
+        docker run -d --name proxy --network appnet --dns-opt ndots:0 -p 127.0.0.1:8080:80 \
             --mount "type=bind,src=$PWD/lab8/nginx.conf,dst=/etc/nginx/conf.d/default.conf,readonly" "$nginx"
         docker exec proxy nginx -t
         docker inspect --format '{{range .Mounts}}{{.Type}} {{.Destination}} writable={{.RW}}{{println}}{{end}}' proxy
