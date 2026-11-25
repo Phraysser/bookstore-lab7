@@ -1,0 +1,69 @@
+name: Docker
+
+on:
+  workflow_call:
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build, deploy to kind and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and load image into Docker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: bookstore:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: bookstore
+      - name: Deploy to kind
+        run: |
+          kind load docker-image bookstore:ci --name bookstore
+          kubectl apply -f k8s/bookstore.yml
+          kubectl rollout status deployment/bookstore --timeout=120s
+          kubectl get pods,services -l app=bookstore
+      - name: Check HTTP in kind
+        run: bash scripts/smoke-kind.sh
+      - name: Kubernetes diagnostics
+        if: failure()
+        run: |
+          kubectl get pods,services -l app=bookstore || true
+          kubectl describe deployment/bookstore || true
+          kubectl logs deployment/bookstore --tail=100 || true
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish tested image
+        if: github.event_name == 'push'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          image="docker.io/${DOCKERHUB_USERNAME,,}/bookstore"
+          tags=("sha-${GITHUB_SHA:0:7}")
+          if [[ "$GITHUB_REF_TYPE" == branch ]]; then
+            tags+=(main)
+          else
+            tags+=("$GITHUB_REF_NAME")
+          fi
+          for tag in "${tags[@]}"; do
+            docker tag bookstore:ci "$image:$tag"
+            docker push "$image:$tag"
+          done
