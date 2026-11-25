@@ -67,3 +67,15 @@ jobs:
             docker tag bookstore:ci "$image:$tag"
             docker push "$image:$tag"
           done
+      - name: Pull and check published image
+        if: github.event_name == 'push'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          image="docker.io/${DOCKERHUB_USERNAME,,}/bookstore:sha-${GITHUB_SHA:0:7}"
+          docker image rm "$image"
+          docker pull "$image"
+          docker run -d --rm --name bookstore-published -p 127.0.0.1:18080:8080 "$image"
+          trap 'docker stop bookstore-published >/dev/null' EXIT
+          docker ps --filter name=bookstore-published
+          bash scripts/smoke-http.sh http://127.0.0.1:18080
